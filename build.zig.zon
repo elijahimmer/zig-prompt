@@ -2,9 +2,13 @@
     .name = "zig-prompt",
     .version = "0.0.0",
     .dependencies = .{
-        .@"raylib-zig" = .{
-            .url = "git+https://github.com/Not-Nik/raylib-zig/#58df62807f62bef1db79538d04b37b9f79909d0a",
-            .hash = "1220df9aa89d657f5dca24ab0ac3d187f7a992a4d27461fd9e76e934bf0670ca9a90",
+        .raylib = .{
+            .url = "git+https://github.com/raysan5/raylib#8ea5db3ec43d1fa702b29df9066307d0d337b229",
+            .hash = "1220a14a437f178b514eb48efd7b73c1f34e4a5cba8f8bcbf528efd052de20c05d10",
+        },
+        .clap = .{
+            .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.9.1.tar.gz",
+            .hash = "122062d301a203d003547b414237229b09a7980095061697349f8bef41be9c30266b",
         },
     },
     .paths = .{

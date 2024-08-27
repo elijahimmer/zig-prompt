@@ -8,7 +8,7 @@ pub fn build(b: *std.Build) void {
 
     const optimize = b.standardOptimizeOption(.{});
 
-    const raylib_dep = b.dependency("raylib-zig", .{
+    const raylib_dep = b.dependency("raylib", .{
         .target = target,
         .optimize = optimize,
         .raudio = false,
@@ -17,12 +17,11 @@ pub fn build(b: *std.Build) void {
         .rtext = true,
         .rtextures = true,
         //.raygui = false,
-        .platform_drm = false,
+        .platform_drm = true,
         .shared = true,
         .linux_display_backend = .Wayland,
     });
 
-    const raylib = raylib_dep.module("raylib"); // main raylib module
     const raylib_artifact = raylib_dep.artifact("raylib"); // raylib C library
 
     const exe = b.addExecutable(.{
@@ -30,10 +29,13 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .single_threaded = true,
     });
 
     exe.linkLibrary(raylib_artifact);
-    exe.root_module.addImport("raylib", raylib);
+
+    const clap = b.dependency("clap", .{});
+    exe.root_module.addImport("clap", clap.module("clap"));
 
     b.installArtifact(exe);
 

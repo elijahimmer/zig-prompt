@@ -1,17 +1,27 @@
 const nativeToBig = @import("std").mem.nativeToBig;
-const Color = @import("raylib").Color;
+pub const Color = @cImport({
+    @cInclude("raylib.h");
+}).Color;
 
-pub const main: Color = @bitCast(nativeToBig(u32, 0x191724FF));
-pub const surface: Color = @bitCast(nativeToBig(u32, 0x1f1d2eFF));
-pub const overlay: Color = @bitCast(nativeToBig(u32, 0x26233aFF));
-pub const muted: Color = @bitCast(nativeToBig(u32, 0x908caaFF));
-pub const text: Color = @bitCast(nativeToBig(u32, 0xe0def4FF));
-pub const love: Color = @bitCast(nativeToBig(u32, 0xeb6f92FF));
-pub const gold: Color = @bitCast(nativeToBig(u32, 0xf6c177FF));
-pub const rose: Color = @bitCast(nativeToBig(u32, 0xebbcbaFF));
-pub const pine: Color = @bitCast(nativeToBig(u32, 0x31748fFF));
-pub const foam: Color = @bitCast(nativeToBig(u32, 0x9ccfd8FF));
-pub const iris: Color = @bitCast(nativeToBig(u32, 0xc4a7e7FF));
-pub const hl_low: Color = @bitCast(nativeToBig(u32, 0x21202eFF));
-pub const hl_med: Color = @bitCast(nativeToBig(u32, 0x403d52FF));
-pub const hl_high: Color = @bitCast(nativeToBig(u32, 0x524f67FF));
+pub fn int2Color(int: u32) Color {
+    var val = int;
+    if (val < 0x1_00_00_00) {
+        val = (val << 8) + 0xFF;
+    }
+    return @bitCast(nativeToBig(u32, val));
+}
+
+pub const main: Color = int2Color(0x191724);
+pub const surface: Color = int2Color(0x1f1d2e);
+pub const overlay: Color = int2Color(0x26233a);
+pub const muted: Color = int2Color(0x908caa);
+pub const text: Color = int2Color(0xe0def4);
+pub const love: Color = int2Color(0xeb6f92);
+pub const gold: Color = int2Color(0xf6c177);
+pub const rose: Color = int2Color(0xebbcba);
+pub const pine: Color = int2Color(0x31748f);
+pub const foam: Color = int2Color(0x9ccfd8);
+pub const iris: Color = int2Color(0xc4a7e7);
+pub const hl_low: Color = int2Color(0x21202e);
+pub const hl_med: Color = int2Color(0x403d52);
+pub const hl_high: Color = int2Color(0x524f67);
