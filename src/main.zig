@@ -102,20 +102,32 @@ fn draw_window(data: []u8, config: *const Config, freetype_lib: *const freetype.
     // draw text
     try font_face.setCharSize(config.font_size * 64, 0, @as(u16, @intCast(config.width)), @as(u16, @intCast(config.height)));
 
-    const glyph_index = font_face.getCharIndex('') orelse 0;
+    var origin = Vector{ .x = 10, .y = 10 };
 
-    try font_face.loadGlyph(glyph_index, .{
-        .bitmap_metrics_only = true,
-        .render = true,
-        .target_normal = true,
-    });
-    const glyph = font_face.glyph();
-    try glyph.render(.normal);
+    for (config.text) |char| {
+        const glyph_index = font_face.getCharIndex(char) orelse 0;
 
-    var bitmap = glyph.bitmap();
-    defer bitmap.deinit(freetype_lib.*);
+        try font_face.loadGlyph(glyph_index, .{
+            .bitmap_metrics_only = true,
+            .render = true,
+            .target_normal = true,
+        });
 
-    try draw_bitmap(data, config, &bitmap, .{ .x = 10, .y = 10 });
+        const glyph_slot = font_face.glyph();
+        try glyph_slot.render(.normal);
+
+        var bitmap = glyph_slot.bitmap();
+        defer bitmap.deinit(freetype_lib.*);
+
+        try draw_bitmap(data, config, &bitmap, origin);
+
+        const glyph = try glyph_slot.getGlyph();
+
+        log.debug("origin x: {}, y: {}", origin);
+        origin.x = @as(usize, @intCast(@as(isize, @intCast(origin.x)) + glyph.advanceX()));
+        origin.y = @as(usize, @intCast(@as(isize, @intCast(origin.y)) + glyph.advanceY()));
+        log.debug("origin x: {}, y: {}", origin);
+    }
 }
 
 const Vector = struct {
