@@ -2,19 +2,25 @@
     .name = "zig-prompt",
     .version = "0.0.0",
     .dependencies = .{
-        .raylib = .{
-            .url = "git+https://github.com/raysan5/raylib#8ea5db3ec43d1fa702b29df9066307d0d337b229",
-            .hash = "1220a14a437f178b514eb48efd7b73c1f34e4a5cba8f8bcbf528efd052de20c05d10",
-        },
         .clap = .{
             .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.9.1.tar.gz",
             .hash = "122062d301a203d003547b414237229b09a7980095061697349f8bef41be9c30266b",
+        },
+        .@"zig-wayland" = .{
+            .url = "https://codeberg.org/ifreund/zig-wayland/archive/v0.2.0.tar.gz",
+            .hash = "1220687c8c47a48ba285d26a05600f8700d37fc637e223ced3aa8324f3650bf52242",
+        },
+        .mach_freetype = .{
+            .url = "git+https://github.com/hexops/mach-freetype#86fc8024d4ddd53df75dfa4f3ad4eebe0b1b4284",
+            .hash = "12206251ed342f400b80abf3c338521f5d8c83eb596899abf77a2afe0cfd46e61ff0",
         },
     },
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "src",
+        "protocols",
         "LICENSE",
+        "fonts",
     },
 }

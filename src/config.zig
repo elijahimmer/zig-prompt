@@ -4,13 +4,16 @@ pub const Config = struct {
     program_name: [:0]const u8 = "zig-prompt",
 
     // params
-    width: ?u16 = null, // way more than large enough.
-    height: ?u16 = null,
+    width: u31 = 450, // way more than large enough.
+    height: u31 = 450,
 
     title: [:0]const u8 = "zig-prompt",
 
-    background: Color = colors.main,
-    foreground: Color = colors.text,
+    background_color: Color = colors.main,
+    text_color: Color = colors.text,
+
+    border_width: u8 = 3,
+    border_color: Color = colors.iris,
 
     font_size: u16 = 12,
 
@@ -28,15 +31,17 @@ pub const Option = struct {
 };
 
 const help =
-    \\-h, --help                Display this help and exit.
-    \\-w, --width <INT>         The window's width
-    \\-l, --height <INT>        The window's height
-    \\-t, --title <STR>         The window's title
-    \\-b, --background <COLOR>  The background color in base 16
-    \\-f, --foreground <COLOR>  The foreground color in base 16
-    \\-s, --seperator <STR>     The seperator between each key and option
-    \\    --font-size <INT>     The font size to use
-    \\<OPTION> ...              The options to enable {{KEY}}={{DESCRIPTION}}
+    \\-h, --help                    Display this help and exit.
+    \\-w, --width <INT>             The window's width
+    \\-l, --height <INT>            The window's height
+    \\-t, --title <STR>             The window's title
+    \\-b, --background <COLOR>      The background color in hex
+    \\-T, --text-color <COLOR>      The text color in hex
+    \\-B, --border-color <COLOR>    The border color in hex
+    \\    --border-size <INT>       The border size (default: 3)
+    \\-s, --seperator <STR>         The seperator between each key and option
+    \\    --font-size <INT>         The font size in points to use
+    \\<OPTION> ...                  The options to enable {{KEY}}={{DESCRIPTION}}
     \\
 ;
 
@@ -106,10 +111,10 @@ pub fn parse_argv(allocator: std.mem.Allocator) !Config {
         config.title = title;
     }
     if (res.args.background) |b| {
-        config.background = b;
+        config.background_color = b;
     }
-    if (res.args.foreground) |f| {
-        config.foreground = f;
+    if (res.args.@"text-color") |T| {
+        config.text_color = T;
     }
     if (res.args.@"font-size") |f| {
         config.font_size = f;
@@ -148,6 +153,8 @@ pub fn parse_argv(allocator: std.mem.Allocator) !Config {
 
     return config;
 }
+
+const assets = @import("assets");
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
