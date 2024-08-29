@@ -38,7 +38,10 @@ pub fn main() anyerror!void {
 
         try draw_ctx.draw_window(&screen_buffer);
 
-        const pool = try shm.createPool(screen_buffer.fd, screen_buffer.width * screen_buffer.height);
+        config.height = @intCast(screen_buffer.height);
+        config.width = @intCast(screen_buffer.width);
+
+        const pool = try shm.createPool(screen_buffer.fd, screen_buffer.width * screen_buffer.height * 4);
         defer pool.destroy();
 
         break :buffer try pool.createBuffer(0, @intCast(screen_buffer.width), @intCast(screen_buffer.height), @intCast(screen_buffer.width * 4), wl.Shm.Format.argb8888);

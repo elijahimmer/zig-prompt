@@ -1,36 +1,37 @@
 pub const Config = struct {
     // general things
     arena: ArenaAllocator,
-    program_name: [:0]const u8 = "zig-prompt",
+    program_name: []const u8,
 
     // params
-    width: ?u31 = null,
-    height: ?u31 = null,
+    width: ?u16,
+    height: ?u16,
 
-    title: [:0]const u8 = "zig-prompt",
+    title: []const u8,
 
-    background_color: Color = colors.main,
-    text_color: Color = colors.text,
+    background_color: Color,
+    text_color: Color,
 
-    border_width: u8 = 3,
-    border_color: Color = colors.iris,
+    border_size: u8,
+    border_color: Color,
 
-    font_size: u16 = 12,
+    font_size: u16,
 
-    text: [][]u8 = undefined,
+    options: []const Option,
+    seperator: []const u8,
 
     pub fn deinit(self: *const @This()) void {
         self.arena.deinit();
     }
 
     pub fn parse_argv(allocator: std.mem.Allocator) !Config {
-        var config = Config{ .arena = ArenaAllocator{ .child_allocator = allocator, .state = .{} } };
-        const alloc = config.arena.allocator();
+        var arena = ArenaAllocator.init(allocator);
+        const alloc = arena.allocator();
 
         var iter = try std.process.ArgIterator.initWithAllocator(alloc);
         defer iter.deinit();
 
-        config.program_name = iter.next().?;
+        const program_name = iter.next() orelse "zig-prompt";
 
         var diag = clap.Diagnostic{};
         var res = clap.parse(clap.Help, &params, parsers, .{
@@ -40,36 +41,12 @@ pub const Config = struct {
             diag.report(std.io.getStdErr().writer(), err) catch {};
             exit(0);
         };
-        defer res.deinit();
 
-        if (res.args.help != 0) {
+        const args = &res.args;
+
+        if (args.help != 0) {
             clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{}) catch unreachable;
             exit(0);
-        }
-
-        if (res.args.width) |w| {
-            config.width = w;
-        }
-        if (res.args.height) |h| {
-            config.height = h;
-        }
-        if (res.args.title) |t| {
-            const title = try alloc.allocSentinel(u8, t.len, 0);
-            @memcpy(title, t);
-            config.title = title;
-        }
-        if (res.args.background) |b| {
-            config.background_color = b;
-        }
-        if (res.args.@"text-color") |T| {
-            config.text_color = T;
-        }
-        if (res.args.@"font-size") |f| {
-            config.font_size = f;
-        }
-        var seperator: []const u8 = " -> ";
-        if (res.args.seperator) |s| {
-            seperator = s;
         }
 
         if (res.positionals.len == 0) {
@@ -77,23 +54,26 @@ pub const Config = struct {
             exit(0);
         }
 
-        const lines = res.positionals.len;
-        var text_buffer = try alloc.alloc([]u8, lines);
+        return Config{
+            .arena = arena,
+            .program_name = program_name,
 
-        for (res.positionals, 0..) |option, idx| {
-            const text_length = option.key.len + seperator.len + option.desc.len;
-            const text = try alloc.alloc(u8, text_length);
+            .width = args.width,
+            .height = args.height,
 
-            @memcpy(text[0..option.key.len], option.key);
-            @memcpy(text[option.key.len..][0..seperator.len], seperator);
-            @memcpy(text[option.key.len..][seperator.len..][0..option.desc.len], option.desc);
+            .background_color = args.@"background-color" orelse colors.main,
+            .text_color = args.@"text-color" orelse colors.text,
 
-            text_buffer[idx] = text;
-        }
+            .font_size = @intCast(args.@"font-size" orelse 20),
 
-        config.text = text_buffer;
+            .border_size = @intCast(args.@"border-size" orelse 3),
+            .border_color = args.@"border-color" orelse colors.iris,
 
-        return config;
+            .title = args.title orelse "zig-prompt",
+
+            .options = res.positionals,
+            .seperator = args.seperator orelse " -> ",
+        };
     }
 };
 
@@ -103,17 +83,17 @@ pub const Option = struct {
 };
 
 const help =
-    \\-h, --help                    Display this help and exit.
-    \\-w, --width <INT>             The window's width
-    \\-l, --height <INT>            The window's height
-    \\-t, --title <STR>             The window's title
-    \\-b, --background <COLOR>      The background color in hex
-    \\-T, --text-color <COLOR>      The text color in hex
-    \\-B, --border-color <COLOR>    The border color in hex
-    \\    --border-size <INT>       The border size (default: 3)
-    \\-s, --seperator <STR>         The seperator between each key and option
-    \\    --font-size <INT>         The font size in points to use
-    \\<OPTION> ...                  The options to enable {{KEY}}={{DESCRIPTION}}
+    \\-h, --help                     Display this help and exit.
+    \\-w, --width <INT>              The window's width
+    \\-l, --height <INT>             The window's height
+    \\-t, --title <STR>              The window's title
+    \\-b, --background-color <COLOR> The background color in hex
+    \\-T, --text-color <COLOR>       The text color in hex
+    \\-B, --border-color <COLOR>     The border color in hex
+    \\    --border-size <INT>        The border size (default: 3)
+    \\-s, --seperator <STR>          The seperator between each key and option
+    \\    --font-size <INT>          The font size in points to use
+    \\<OPTION> ...                   The options to enable {{KEY}}={{DESCRIPTION}}
     \\
 ;
 
@@ -129,8 +109,10 @@ const OptionParserError = error{
     @"Option Contains Invalid Unicode Character",
 };
 
+const option_seperators = "=";
+
 fn option_parser(input: []const u8) OptionParserError!Option {
-    const seperator_idx = std.mem.indexOfScalar(u8, input, '=') orelse return error.@"Option Syntax Error";
+    const seperator_idx = std.mem.indexOf(u8, input, option_seperators) orelse return error.@"Option Syntax Error";
     if (!(input.len >= 3)) return error.@"Option Syntax Error";
     if (std.mem.indexOfScalar(u8, input, 0) != null) return error.@"Option Contains Illegal Null Character";
     if (!std.unicode.utf8ValidateSlice(input[2..])) return error.@"Option Contains Invalid Unicode Character";
