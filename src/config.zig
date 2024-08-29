@@ -4,8 +4,8 @@ pub const Config = struct {
     program_name: [:0]const u8 = "zig-prompt",
 
     // params
-    width: u31 = 450, // way more than large enough.
-    height: u31 = 450,
+    width: ?u31 = null,
+    height: ?u31 = null,
 
     title: [:0]const u8 = "zig-prompt",
 
@@ -17,16 +17,88 @@ pub const Config = struct {
 
     font_size: u16 = 12,
 
-    text: [:0]const u8 = "placeholder",
-    lines: u16 = 0,
+    text: [][]u8 = undefined,
 
     pub fn deinit(self: *const @This()) void {
         self.arena.deinit();
     }
+
+    pub fn parse_argv(allocator: std.mem.Allocator) !Config {
+        var config = Config{ .arena = ArenaAllocator{ .child_allocator = allocator, .state = .{} } };
+        const alloc = config.arena.allocator();
+
+        var iter = try std.process.ArgIterator.initWithAllocator(alloc);
+        defer iter.deinit();
+
+        config.program_name = iter.next().?;
+
+        var diag = clap.Diagnostic{};
+        var res = clap.parse(clap.Help, &params, parsers, .{
+            .diagnostic = &diag,
+            .allocator = alloc,
+        }) catch |err| {
+            diag.report(std.io.getStdErr().writer(), err) catch {};
+            exit(0);
+        };
+        defer res.deinit();
+
+        if (res.args.help != 0) {
+            clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{}) catch unreachable;
+            exit(0);
+        }
+
+        if (res.args.width) |w| {
+            config.width = w;
+        }
+        if (res.args.height) |h| {
+            config.height = h;
+        }
+        if (res.args.title) |t| {
+            const title = try alloc.allocSentinel(u8, t.len, 0);
+            @memcpy(title, t);
+            config.title = title;
+        }
+        if (res.args.background) |b| {
+            config.background_color = b;
+        }
+        if (res.args.@"text-color") |T| {
+            config.text_color = T;
+        }
+        if (res.args.@"font-size") |f| {
+            config.font_size = f;
+        }
+        var seperator: []const u8 = " -> ";
+        if (res.args.seperator) |s| {
+            seperator = s;
+        }
+
+        if (res.positionals.len == 0) {
+            print("You must provide some options to display!", .{});
+            exit(0);
+        }
+
+        const lines = res.positionals.len;
+        var text_buffer = try alloc.alloc([]u8, lines);
+
+        for (res.positionals, 0..) |option, idx| {
+            const text_length = option.key.len + seperator.len + option.desc.len;
+            const text = try alloc.alloc(u8, text_length);
+
+            @memcpy(text[0..option.key.len], option.key);
+            @memcpy(text[option.key.len..][0..seperator.len], seperator);
+            @memcpy(text[option.key.len..][seperator.len..][0..option.desc.len], option.desc);
+
+            text_buffer[idx] = text;
+        }
+
+        config.text = text_buffer;
+
+        return config;
+    }
 };
 
 pub const Option = struct {
-    key: u8,
+    key: []const u8,
     desc: []const u8,
 };
 
@@ -54,17 +126,18 @@ fn color_parser(input: []const u8) std.fmt.ParseIntError!Color {
 const OptionParserError = error{
     @"Option Syntax Error",
     @"Option Contains Illegal Null Character",
-    @"Option Contains Invalid Unicode",
+    @"Option Contains Invalid Unicode Character",
 };
 
-fn option_parser(input: []const u8) !Option {
-    if (!(input.len >= 3) or input[1] != '=') return error.@"Option Syntax Error";
+fn option_parser(input: []const u8) OptionParserError!Option {
+    const seperator_idx = std.mem.indexOfScalar(u8, input, '=') orelse return error.@"Option Syntax Error";
+    if (!(input.len >= 3)) return error.@"Option Syntax Error";
     if (std.mem.indexOfScalar(u8, input, 0) != null) return error.@"Option Contains Illegal Null Character";
     if (!std.unicode.utf8ValidateSlice(input[2..])) return error.@"Option Contains Invalid Unicode Character";
 
     return Option{
-        .key = input[0],
-        .desc = input[2..],
+        .key = input[0..seperator_idx],
+        .desc = input[seperator_idx + 1 ..],
     };
 }
 
@@ -74,85 +147,6 @@ const parsers = .{
     .COLOR = color_parser,
     .OPTION = option_parser,
 };
-
-pub fn parse_argv(allocator: std.mem.Allocator) !Config {
-    var config = Config{ .arena = ArenaAllocator{ .child_allocator = allocator, .state = .{} } };
-    const alloc = config.arena.allocator();
-
-    var iter = try std.process.ArgIterator.initWithAllocator(alloc);
-    defer iter.deinit();
-
-    config.program_name = iter.next().?;
-
-    var diag = clap.Diagnostic{};
-    var res = clap.parse(clap.Help, &params, parsers, .{
-        .diagnostic = &diag,
-        .allocator = alloc,
-    }) catch |err| {
-        diag.report(std.io.getStdErr().writer(), err) catch {};
-        exit(0);
-    };
-    defer res.deinit();
-
-    if (res.args.help != 0) {
-        clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{}) catch unreachable;
-        exit(0);
-    }
-
-    if (res.args.width) |w| {
-        config.width = w;
-    }
-    if (res.args.height) |h| {
-        config.height = h;
-    }
-    if (res.args.title) |t| {
-        const title = try alloc.allocSentinel(u8, t.len, 0);
-        @memcpy(title, t);
-        config.title = title;
-    }
-    if (res.args.background) |b| {
-        config.background_color = b;
-    }
-    if (res.args.@"text-color") |T| {
-        config.text_color = T;
-    }
-    if (res.args.@"font-size") |f| {
-        config.font_size = f;
-    }
-    var seperator: []const u8 = " -> ";
-    if (res.args.seperator) |s| {
-        seperator = s;
-    }
-
-    if (res.positionals.len == 0) {
-        print("You must provide some options to display!", .{});
-        exit(0);
-    }
-
-    var text_len = res.positionals.len * (2 + seperator.len); // 1 for character, 1 for newline at end
-
-    for (res.positionals) |o| text_len += o.desc.len;
-
-    var text_buffer = try alloc.allocSentinel(u8, text_len, 0);
-
-    var cursor: usize = 0;
-
-    for (res.positionals) |option| {
-        text_buffer[cursor] = option.key;
-        cursor += 1;
-        @memcpy(text_buffer[cursor..][0..seperator.len], seperator);
-        cursor += seperator.len;
-        @memcpy(text_buffer[cursor..][0..option.desc.len], option.desc);
-        cursor += option.desc.len;
-        text_buffer[cursor] = '\n';
-        cursor += 1;
-        config.lines += 1;
-    }
-
-    config.text = text_buffer;
-
-    return config;
-}
 
 const assets = @import("assets");
 
