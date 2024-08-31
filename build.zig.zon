@@ -10,17 +10,18 @@
             .url = "https://codeberg.org/ifreund/zig-wayland/archive/v0.2.0.tar.gz",
             .hash = "1220687c8c47a48ba285d26a05600f8700d37fc637e223ced3aa8324f3650bf52242",
         },
-        .mach_freetype = .{
-            .url = "git+https://github.com/hexops/mach-freetype#86fc8024d4ddd53df75dfa4f3ad4eebe0b1b4284",
-            .hash = "12206251ed342f400b80abf3c338521f5d8c83eb596899abf77a2afe0cfd46e61ff0",
+        .freetype = .{
+            .url = "git+https://github.com/hexops/freetype#e8c5b37f320db03acba410d993441815bc809606",
+            .hash = "1220babb7939707ca390b934657dfd3c8c3a6a78cc9442e4cbd43e3f9ffd49daec9e",
         },
     },
     .paths = .{
-        "build.zig",
-        "build.zig.zon",
         "src",
         "protocols",
-        "LICENSE",
         "fonts",
+
+        "build.zig",
+        "build.zig.zon",
+        "LICENSE",
     },
 }

@@ -1,5 +1,8 @@
 pub fn main() anyerror!void {
-    var config = try Config.parse_argv(std.heap.page_allocator);
+    var config = try Config.parse_argv(std.heap.c_allocator);
+
+    var draw_ctx = try DrawContext.init(std.heap.c_allocator, &config);
+    // No deinit, lives as long as program
 
     const display = try wl.Display.connect(null);
     const registry = try display.getRegistry();
@@ -31,7 +34,6 @@ pub fn main() anyerror!void {
     if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
     const buffer = buffer: {
-        const draw_ctx = try DrawContext.init(&config);
         const screen_buffer = try draw_ctx.createScreenBuffer();
 
         log.debug("height: {}, width: {}", .{ screen_buffer.height, screen_buffer.width });
@@ -137,6 +139,10 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, ctx: *OutputContex
         },
         .scale, .name, .description => {},
     }
+}
+
+test {
+    std.testing.refAllDecls(DrawContext);
 }
 
 const DrawContext = @import("DrawContext.zig");

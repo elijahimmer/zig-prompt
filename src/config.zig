@@ -99,14 +99,16 @@ const help =
 
 const params = clap.parseParamsComptime(help);
 
-fn color_parser(input: []const u8) std.fmt.ParseIntError!Color {
-    return colors.int2Color(try clap.parsers.int(u32, 16)(input));
+fn color_parser(input: []const u8) colors.Str2ColorError!Color {
+    return try colors.str2Color(input);
 }
 
 const OptionParserError = error{
     @"Option Syntax Error",
     @"Option Contains Illegal Null Character",
     @"Option Contains Invalid Unicode Character",
+    @"Option must contain a key",
+    @"Option must contain a description",
 };
 
 const option_seperators = "=";
@@ -117,10 +119,13 @@ fn option_parser(input: []const u8) OptionParserError!Option {
     if (std.mem.indexOfScalar(u8, input, 0) != null) return error.@"Option Contains Illegal Null Character";
     if (!std.unicode.utf8ValidateSlice(input[2..])) return error.@"Option Contains Invalid Unicode Character";
 
-    return Option{
-        .key = input[0..seperator_idx],
-        .desc = input[seperator_idx + 1 ..],
-    };
+    const key = input[0..seperator_idx];
+    const desc = input[seperator_idx + 1 ..];
+
+    if (key.len == 0) return error.@"Option must contain a key";
+    if (desc.len == 0) return error.@"Option must contain a description";
+
+    return Option{ .key = key, .desc = desc };
 }
 
 const parsers = .{
