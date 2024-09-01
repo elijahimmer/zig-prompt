@@ -14,9 +14,7 @@ pub fn rgb2Color(int: u24) Color {
 
 pub fn rgba2argb(rgba: Color) Color {
     var color = rgba;
-
     std.mem.rotate(u8, std.mem.asBytes(&color), 1);
-
     return color;
 }
 
@@ -24,8 +22,8 @@ test rgba2argb {
     const expectEqual = std.testing.expectEqual;
 
     try expectEqual(
-        0x01020304,
-        @as(u32, @bitCast(rgba2argb(@bitCast(@as(u32, 0x02030401))))),
+        0x11223344,
+        @as(u32, @bitCast(rgba2argb(@bitCast(@as(u32, 0x22334411))))),
     );
 }
 

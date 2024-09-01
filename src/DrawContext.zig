@@ -46,6 +46,7 @@ pub fn init(allocator: Allocator, config: *const Config) !*DrawContext {
         .realloc = freetype_realloc,
     };
 
+    // // standard setup without a custom allocator
     //var err = freetype.FT_Init_FreeType(&ctx.freetype_lib);
     //errdefer freetype.FT_Done_FreeType(&ctx.freetype_lib);
 
@@ -53,6 +54,7 @@ pub fn init(allocator: Allocator, config: *const Config) !*DrawContext {
     errdefer freetype.FT_Done_Library(&ctx.freetype_lib);
     if (err != 0) @panic("failed to initilize freetype");
 
+    // TODO: Maybe customize modules to only what is needed.
     freetype.FT_Add_Default_Modules(ctx.freetype_lib);
     freetype.FT_Set_Default_Properties(ctx.freetype_lib);
 
@@ -168,7 +170,7 @@ pub fn draw_window(self: *const DrawContext, screen: *const ScreenBuffer) !void 
 
     // Draw text
 
-    const pixel_height = self.config.font_size * 3;
+    const pixel_height = self.config.font_size;
 
     var origin = Vector{ .x = 10, .y = pixel_height };
 
@@ -363,7 +365,6 @@ test "freetype allocator" {
 }
 
 test "init" {
-    //pub fn init(parent_allocator: Allocator, config: *const Config) !*DrawContext {
     const context = try init(std.testing.allocator, &Config{
         .arena = ArenaAllocator.init(std.testing.allocator),
 
