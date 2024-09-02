@@ -35,4 +35,4 @@ Using it under MIT
 A great tool for building and maintaining packages and dependencies.
 (even if not used much here yet)
 
-Using it under MIT
+Using it under LGPLv2.1

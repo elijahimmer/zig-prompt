@@ -24,9 +24,9 @@ pub fn build(b: *std.Build) void {
     const font_data = font_file.readToEndAlloc(b.allocator, 5_000_000) catch @panic("Failed to read font file");
     options.addOption([]const u8, "font_data", font_data);
 
-    const FreeTypeAllocatorOptions = enum { default, custom };
+    const FreeTypeAllocatorOptions = enum { c, zig };
 
-    const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use") orelse .default;
+    const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use") orelse .c;
     options.addOption(FreeTypeAllocatorOptions, "freetype_allocator", freetype_allocator);
 
     const exe_unit_tests = b.addTest(.{
@@ -35,8 +35,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .single_threaded = true,
     });
-
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
     const clap = b.dependency("clap", .{});
     const freetype = b.dependency("freetype", .{});
@@ -85,6 +83,7 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
 }

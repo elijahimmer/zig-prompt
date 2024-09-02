@@ -1,13 +1,11 @@
 pub fn main() anyerror!void {
     var config = try Config.parse_argv(std.heap.c_allocator);
-
-    var draw_ctx = try DrawContext.init(std.heap.c_allocator, &config);
-    // No deinit, lives as long as program
+    //if (builtins.runtime_saftey)
 
     const display = try wl.Display.connect(null);
     const registry = try display.getRegistry();
 
-    var wayland_context = Context{
+    var wayland_context = WaylandContext{
         .shm = null,
         .compositor = null,
         .output = null,
@@ -16,7 +14,7 @@ pub fn main() anyerror!void {
         .layer_shell = null,
     };
 
-    registry.setListener(*Context, registryListener, &wayland_context);
+    registry.setListener(*WaylandContext, registryListener, &wayland_context);
     if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
     const shm = wayland_context.shm orelse return error.@"No Wayland Shared Memory";
@@ -24,14 +22,19 @@ pub fn main() anyerror!void {
 
     const compositor = wayland_context.compositor orelse return error.@"No Wayland Compositor";
 
-    //const output = wayland_context.output orelse return error.@"No Wayland Output";
-    //defer output.release();
-    //output.setListener(*OutputContext, outputListener, &wayland_context.output_context);
+    const output = wayland_context.output orelse return error.@"No Wayland Output";
+    defer output.release();
+    output.setListener(*OutputContext, outputListener, &wayland_context.output_context);
 
     //const wm_base = wayland_context.wm_base orelse return error.@"No Xdg Window Manager Base";
     const layer_shell = wayland_context.layer_shell orelse return error.@"No WlRoots Layer Shell";
 
     if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+    if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+    //assert(wayland_context.output_context.is_done);
+
+    var draw_ctx = try DrawContext.init(std.heap.c_allocator, &wayland_context.output_context, &config);
+    // No deinit, lives as long as program
 
     const buffer = buffer: {
         const screen_buffer = try draw_ctx.createScreenBuffer();
@@ -76,7 +79,7 @@ pub fn main() anyerror!void {
     }
 }
 
-const Context = struct {
+const WaylandContext = struct {
     compositor: ?*wl.Compositor,
     output: ?*wl.Output,
     output_context: OutputContext,
@@ -86,7 +89,7 @@ const Context = struct {
     layer_shell: ?*zwlr.LayerShellV1,
 };
 
-const OutputContext = struct {
+pub const OutputContext = struct {
     width: ?u16 = null,
     height: ?u16 = null,
     physical_width: ?u16 = null,
@@ -94,7 +97,7 @@ const OutputContext = struct {
     is_done: bool = false,
 };
 
-fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *Context) void {
+fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *WaylandContext) void {
     switch (event) {
         .global => |global| {
             if (mem.orderZ(u8, global.interface, wl.Compositor.getInterface().name) == .eq) {
@@ -121,20 +124,21 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
 }
 
 fn outputListener(output: *wl.Output, event: wl.Output.Event, ctx: *OutputContext) void {
-    const logz = std.log.scoped(.@"zig-prompt.Output");
+    const logl = std.log.scoped(.@"zig-prompt.Output");
     _ = output;
     switch (event) {
         .geometry => |geometry| {
             ctx.physical_width = @intCast(geometry.physical_width);
             ctx.physical_height = @intCast(geometry.physical_height);
-            logz.debug("geometry x: {}, y: {}, physical_width: {}, physical_height: {}", .{ geometry.x, geometry.y, geometry.physical_width, geometry.physical_height });
+            logl.debug("geometry x: {}, y: {}, physical_width: {}, physical_height: {}", .{ geometry.x, geometry.y, geometry.physical_width, geometry.physical_height });
         },
         .mode => |mode| {
             ctx.width = @intCast(mode.width);
             ctx.height = @intCast(mode.height);
-            logz.debug("mode flags: {}, width: {}, height: {}, refresh: {}", mode);
+            logl.debug("mode flags: {}, width: {}, height: {}, refresh: {}", mode);
         },
         .done => {
+            logl.debug("output is done", .{});
             ctx.is_done = true;
         },
         .scale, .name, .description => {},
@@ -156,6 +160,7 @@ const zwlr = wayland.client.zwlr;
 
 const freetype = @import("freetype");
 
+const builtins = @import("builtins");
 const std = @import("std");
 const mem = std.mem;
 const posix = std.posix;
