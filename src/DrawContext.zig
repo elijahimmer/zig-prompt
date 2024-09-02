@@ -34,16 +34,22 @@ const AllocUser = struct {
     }
 };
 
-pub fn init(allocator: Allocator, output_context: *const OutputContext, config: *const Config) !*DrawContext {
-    var ctx = try allocator.create(DrawContext);
-    errdefer allocator.destroy(ctx);
+pub fn init(parent_allocator: Allocator, output_context: *const OutputContext, config: *const Config) !*DrawContext {
+    var ctx = try parent_allocator.create(DrawContext);
+    errdefer parent_allocator.destroy(ctx);
     ctx.config = config;
-    ctx.parent_allocator = allocator;
+    ctx.parent_allocator = parent_allocator;
 
-    ctx.alloc_user = try AllocUser.init(switch (options.freetype_allocator) {
-        .c => std.heap.c_allocator,
-        .zig => allocator,
-    });
+    const alloc = alloc: {
+        var alloc = switch (options.freetype_allocator) {
+            .c => std.heap.c_allocator,
+            .zig => parent_allocator,
+        };
+
+        break :alloc alloc;
+    };
+
+    ctx.alloc_user = try AllocUser.init(alloc);
     ctx.freetype_allocator = freetype.FT_MemoryRec_{
         .user = &ctx.alloc_user,
         .alloc = freetype_alloc,
@@ -449,7 +455,6 @@ const mem = std.mem;
 const posix = std.posix;
 
 const Allocator = std.mem.Allocator;
-const LoggingAllocator = std.heap.ScopedLoggingAllocator(.DrawContext, .debug, .err);
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 
 const assert = std.debug.assert;

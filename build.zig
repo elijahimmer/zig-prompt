@@ -29,6 +29,9 @@ pub fn build(b: *std.Build) void {
     const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use") orelse .c;
     options.addOption(FreeTypeAllocatorOptions, "freetype_allocator", freetype_allocator);
 
+    const freetype_allocation_logging = b.option(bool, "freetype-allocation-logging", "Whether or not to log FreeType Allocations.") orelse false;
+    options.addOption(bool, "freetype_allocation_logging", freetype_allocation_logging);
+
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
