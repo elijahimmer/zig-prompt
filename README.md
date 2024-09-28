@@ -36,9 +36,11 @@ A great wayland protocol binding generator for zig.
 Using it under MIT
 
 ### [wayland](https://wayland.freedesktop.org/)
-This includes is used for wayland-scanner and libwayland-client. (you know, how it actually displays windows).
+This is used for wayland-scanner, libwayland-client. (you know, how it actually displays windows).
 
 Using it under the X11 license, similar to the MIT License.
+
+We also use several different Wayland protocols, which are licensed under MIT.
 
 ## Tools Used
 ### [Zig](https://ziglang.org/)
