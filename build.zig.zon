@@ -11,7 +11,7 @@
             .hash = "1220687c8c47a48ba285d26a05600f8700d37fc637e223ced3aa8324f3650bf52242",
         },
         .freetype = .{
-            .url = "git+https://github.com/hexops/freetype#e8c5b37f320db03acba410d993441815bc809606",
+            .url = "https://github.com/hexops/freetype/archive/refs/heads/master.tar.gz",
             .hash = "1220babb7939707ca390b934657dfd3c8c3a6a78cc9442e4cbd43e3f9ffd49daec9e",
         },
     },

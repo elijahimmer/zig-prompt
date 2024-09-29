@@ -2,9 +2,6 @@ const std = @import("std");
 
 const Scanner = @import("zig-wayland").Scanner;
 
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -21,11 +18,10 @@ pub fn build(b: *std.Build) void {
 
     const font_path = b.option([]const u8, "font-path", "Path to font to use") orelse "fonts/FiraCodeNerdFontMono-Regular.ttf";
     const font_file = std.fs.cwd().openFile(font_path, .{ .mode = .read_only }) catch @panic("Failed to open font file");
-    const font_data = font_file.readToEndAlloc(b.allocator, 5_000_000) catch @panic("Failed to read font file");
+    const font_data = font_file.readToEndAlloc(b.allocator, 5_000_000) catch @panic("Failed to read font file (maybe larger than 5Mbs)?");
     options.addOption([]const u8, "font_data", font_data);
 
     const FreeTypeAllocatorOptions = enum { c, zig };
-
     const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use") orelse .c;
     options.addOption(FreeTypeAllocatorOptions, "freetype_allocator", freetype_allocator);
 
@@ -40,7 +36,10 @@ pub fn build(b: *std.Build) void {
     });
 
     const clap = b.dependency("clap", .{});
-    const freetype = b.dependency("freetype", .{});
+    const freetype = b.dependency("freetype", .{
+        .enable_brotli = false,
+        .use_system_zlib = false,
+    });
 
     const scanner = Scanner.create(b, .{
         .wayland_xml_path = "protocols/wayland.xml",

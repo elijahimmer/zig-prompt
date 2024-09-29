@@ -20,5 +20,41 @@
           nativeBuildInputs = [zig];
           buildInputs = [wayland];
         };
+
+        packages.default = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
+          pname = "zig-prompt";
+          version = "0.0.1";
+
+          outputs = ["out"];
+
+          src = ./.;
+
+          deps = pkgs.callPackage ./build.zig.zon.nix {};
+
+          nativeBuildInputs = [
+            zig.hook
+            pkg-config
+            wayland-scanner
+          ];
+
+          buildInputs = [
+            wayland
+          ];
+
+          zigBuildFlags = [
+            "--system"
+            "${finalAttrs.deps}"
+            #"-Doptimize=ReleaseSafe"
+          ];
+
+          meta = {
+            homepage = "https://github.com/elijahimmer/zig-prompt";
+            description = "A prompting utility for wayland.";
+            license = nixpkgs.lib.licenses.mit;
+
+            mainProgram = "zig-prompt";
+            platforms = lib.platforms.linux;
+          };
+        });
       });
 }

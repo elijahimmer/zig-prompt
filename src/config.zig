@@ -80,10 +80,10 @@ pub const Config = struct {
             .border_color = args.@"border-color" orelse all_colors.iris,
             .border_radius = args.@"border-radius" orelse 16,
 
-            .padding_left = args.@"padding-left" orelse args.padding orelse 3,
-            .padding_right = args.@"padding-right" orelse args.padding orelse 3,
-            .padding_top = args.@"padding-top" orelse args.padding orelse 3,
-            .padding_bottom = args.@"padding-bottom" orelse args.padding orelse 3,
+            .padding_left = args.@"padding-left" orelse args.padding orelse 12,
+            .padding_right = args.@"padding-right" orelse args.padding orelse 12,
+            .padding_top = args.@"padding-top" orelse args.padding orelse 0,
+            .padding_bottom = args.@"padding-bottom" orelse args.padding orelse 0,
 
             .title = args.title orelse std.mem.span(std.os.argv[0]),
 
@@ -104,20 +104,20 @@ const help =
     \\-l, --height <INT>             The window's height
     \\-t, --title <STR>              The window's title
     \\-b, --background-color <COLOR> The background color in hex
-    \\-T, --text-color <COLOR>       The text color in hex
+    \\-T, --text-color <COLOR>       The text color in hex (default)
     \\    --key-color <COLOR>        The text color for the keys in hex (overrides -T for keys)
     \\    --separator-color <COLOR>  The text color for the separators in hex (overrides -T for separators)
     \\    --desc-color <COLOR>       The text color for the descriptions in hex (overrides -T for descriptions)
-    \\    --border-color <COLOR>     The border color in hex
+    \\    --border-color <COLOR>     The border color in hex (default: IRIS)
     \\    --border-size <INT>        The border size (default: 2)
     \\    --border-radius <INT>      The radius to circle off the edges (default: 16)
     \\-s, --separator <STR>          The separator between each key and option
     \\    --font-size <INT>          The font size in points to use
-    \\-p, --padding <INT>            The padding size in pixels between the text and the border (default: 3)
-    \\    --padding-left <INT>       The padding on the left side (overrides -p for this side)
-    \\    --padding-right <INT>      The padding on the right side (overrides -p for this side)
-    \\    --padding-top <INT>        The padding on the top (overrides -p for this side)
-    \\    --padding-bottom <INT>     The padding on the bottom (overrides -p for this side)
+    \\-p, --padding <INT>            The padding size in pixels between the text and the border (if used, overrides default for all sieds)
+    \\    --padding-left <INT>       The padding on the left side (default: 12) (overrides -p for this side)
+    \\    --padding-right <INT>      The padding on the right side (default: 12) (overrides -p for this side)
+    \\    --padding-top <INT>        The padding on the top (default: 0) (overrides -p for this side)
+    \\    --padding-bottom <INT>     The padding on the bottom (default: 0) (overrides -p for this side)
     \\<OPTION> ...                   The options to enable {{KEY}}={{DESCRIPTION}}
     \\
 ;
