@@ -1,4 +1,4 @@
-// This is ARGB format in little endian
+// ARGB is in reverse order for little endian (required by wayland spec)
 pub const Color = packed struct {
     b: u8,
     g: u8,
@@ -19,6 +19,16 @@ test rgb2Color {
     try expectEqual(
         @as(u32, @bitCast(rgb2Color(0x112233))),
         0xFF112233,
+    );
+
+    try expectEqual(
+        rgb2Color(0x112233),
+        Color{
+            .a = 0xFF,
+            .r = 0x11,
+            .g = 0x22,
+            .b = 0x33,
+        },
     );
 }
 
@@ -46,8 +56,6 @@ pub fn str2Color(str: []const u8) Str2ColorError!Color {
     inline for (COLOR_LIST) |color| {
         if (std.ascii.eqlIgnoreCase(color.name, str)) return color.color;
     }
-
-    //pub const ColorListElement = struct { color: Color, name: []const u8 };
 
     var color: u32 = 0;
 
@@ -136,6 +144,7 @@ test composite {
 }
 
 pub const all_colors = struct {
+    // TODO: Add more colors here.
     pub const clear: Color = @bitCast(@as(u32, 0));
     pub const white: Color = @bitCast(~@as(u32, 0));
     pub const black: Color = @bitCast(@as(u32, 0xFF_00_00_00));
@@ -155,8 +164,10 @@ pub const all_colors = struct {
     pub const hl_high: Color = rgb2Color(0x524f67);
 };
 
+pub const ALL_COLORS_LEN = @typeInfo(all_colors).Struct.decls.len;
+
 pub const ColorListElement = struct { color: Color, name: []const u8 };
-pub const COLOR_LIST: [@typeInfo(all_colors).Struct.decls.len]ColorListElement = generate_color_list(all_colors);
+pub const COLOR_LIST: [ALL_COLORS_LEN]ColorListElement = generate_color_list(all_colors);
 
 fn generate_color_list(obj: anytype) [@typeInfo(obj).Struct.decls.len]ColorListElement {
     const type_info = @typeInfo(obj);

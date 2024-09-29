@@ -70,7 +70,7 @@ pub const Config = struct {
 
             .background_color = args.@"background-color" orelse all_colors.main,
             .key_color = args.@"key-color" orelse args.@"text-color" orelse all_colors.text,
-            .separator_color = args.@"separator-color" orelse args.@"text-color" orelse all_colors.text,
+            .separator_color = args.@"separator-color" orelse args.@"text-color" orelse all_colors.rose,
             .desc_color = args.@"desc-color" orelse args.@"text-color" orelse all_colors.text,
 
             .font_size = args.@"font-size" orelse 20,
