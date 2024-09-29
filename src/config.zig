@@ -16,6 +16,7 @@ pub const Config = struct {
 
     border_size: u16,
     border_color: Color,
+    border_radius: u16,
 
     font_size: u16,
 
@@ -77,6 +78,7 @@ pub const Config = struct {
 
             .border_size = args.@"border-size" orelse 2,
             .border_color = args.@"border-color" orelse all_colors.iris,
+            .border_radius = args.@"border-radius" orelse 16,
 
             .padding_left = args.@"padding-left" orelse args.padding orelse 3,
             .padding_right = args.@"padding-right" orelse args.padding orelse 3,
@@ -108,6 +110,7 @@ const help =
     \\    --desc-color <COLOR>       The text color for the descriptions in hex (overrides -T for descriptions)
     \\    --border-color <COLOR>     The border color in hex
     \\    --border-size <INT>        The border size (default: 2)
+    \\    --border-radius <INT>      The radius to circle off the edges (default: 16)
     \\-s, --separator <STR>          The separator between each key and option
     \\    --font-size <INT>          The font size in points to use
     \\-p, --padding <INT>            The padding size in pixels between the text and the border (default: 3)

@@ -1,8 +1,3 @@
-const Vector = struct {
-    x: u31,
-    y: u31,
-};
-
 /// Need to call `close` when done with
 /// The screen in this buffer is the colors on the screen, where each element is one pixel's colors.
 pub const ScreenBuffer = struct {
@@ -262,25 +257,69 @@ pub fn draw_window(self: *const DrawContext, screen: *const ScreenBuffer) !void 
     const border_size = self.config.border_size;
     const background_color = self.config.background_color;
     const border_color = self.config.border_color;
+    const border_radius = self.config.border_radius;
 
-    // Draw background
+    log.debug("\t== Drawing background", .{});
     for (0..height) |y| {
+        // TODO: Stop this from writing over corners when border_radius > 0
         const row = screen.screen[width * y ..];
-        const color = if (y < border_size or y >= height - border_size)
-            border_color
-        else
-            background_color;
+        const y_on_border = height - border_size <= y or y < border_size;
+        const y_not_within_corner = border_radius < y and y < height - border_radius;
 
         for (0..width) |x| {
-            row[x] = if (x < border_size or x >= width - border_size)
-                @bitCast(border_color)
-            else
-                @bitCast(color);
+            const x_on_border = width - border_size <= x or x < border_size;
+            const x_not_within_corner = border_radius < x and x < width - border_radius;
+
+            if (y_on_border) {
+                if (x_not_within_corner) {
+                    row[x] = @bitCast(border_color);
+                }
+                continue;
+            }
+
+            if (x_on_border) {
+                if (y_not_within_corner) {
+                    row[x] = @bitCast(border_color);
+                }
+                continue;
+            }
+
+            if (y_not_within_corner or x_not_within_corner) {
+                row[x] = @bitCast(background_color);
+            }
         }
     }
 
-    // Draw text
+    log.debug("\t== Drawing Corners", .{});
+    var circle_args = drawing.DrawQuarterCircleArgs{
+        .screen_buffer = screen,
+        .origin = .{ .x = border_radius, .y = border_radius },
+        .radius = border_radius,
+        .quadrant = .top_left,
+        .border_size = border_size,
 
+        .inner_color = background_color,
+        .border_color = border_color,
+        .outer_color = all_colors.clear,
+    };
+
+    drawing.draw_quarter_circle(circle_args);
+
+    circle_args.quadrant = .top_right;
+    circle_args.origin.x = width - 1 - border_radius;
+    drawing.draw_quarter_circle(circle_args);
+
+    circle_args.quadrant = .bottom_right;
+    circle_args.origin.y = height - 1 - border_radius;
+    drawing.draw_quarter_circle(circle_args);
+
+    circle_args.quadrant = .bottom_left;
+    circle_args.origin.x = border_radius;
+    drawing.draw_quarter_circle(circle_args);
+
+    //// Draw text
+
+    log.debug("\t== Drawing Text", .{});
     const separator_width = self.text_info.separator_width;
     const key_width = self.text_info.max_key_width;
     const desc_width = self.text_info.max_desc_width;
@@ -494,6 +533,9 @@ const options = @import("options");
 
 const config_mod = @import("config.zig");
 const Config = config_mod.Config;
+
+const drawing = @import("drawing.zig");
+const Vector = drawing.Vector;
 
 const colors = @import("colors.zig");
 const all_colors = colors.all_colors;
