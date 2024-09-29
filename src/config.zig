@@ -10,15 +10,22 @@ pub const Config = struct {
     title: []const u8,
 
     background_color: Color,
-    text_color: Color,
+    key_color: Color,
+    separator_color: Color,
+    desc_color: Color,
 
-    border_size: u8,
+    border_size: u16,
     border_color: Color,
 
     font_size: u16,
 
+    padding_left: u16,
+    padding_right: u16,
+    padding_top: u16,
+    padding_bottom: u16,
+
     options: []const Option,
-    seperator: []const u8,
+    separator: []const u8,
 
     pub fn deinit(self: *const @This()) void {
         self.arena.deinit();
@@ -45,7 +52,7 @@ pub const Config = struct {
         const args = &res.args;
 
         if (args.help != 0) {
-            clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{}) catch unreachable;
+            clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{}) catch {};
             exit(0);
         }
 
@@ -61,18 +68,25 @@ pub const Config = struct {
             .width = args.width,
             .height = args.height,
 
-            .background_color = args.@"background-color" orelse colors.main,
-            .text_color = args.@"text-color" orelse colors.text,
+            .background_color = args.@"background-color" orelse all_colors.main,
+            .key_color = args.@"key-color" orelse args.@"text-color" orelse all_colors.text,
+            .separator_color = args.@"separator-color" orelse args.@"text-color" orelse all_colors.text,
+            .desc_color = args.@"desc-color" orelse args.@"text-color" orelse all_colors.text,
 
-            .font_size = @intCast(args.@"font-size" orelse 20),
+            .font_size = args.@"font-size" orelse 20,
 
-            .border_size = @intCast(args.@"border-size" orelse 3),
-            .border_color = args.@"border-color" orelse colors.iris,
+            .border_size = args.@"border-size" orelse 2,
+            .border_color = args.@"border-color" orelse all_colors.iris,
 
-            .title = args.title orelse "zig-prompt",
+            .padding_left = args.@"padding-left" orelse args.padding orelse 3,
+            .padding_right = args.@"padding-right" orelse args.padding orelse 3,
+            .padding_top = args.@"padding-top" orelse args.padding orelse 3,
+            .padding_bottom = args.@"padding-bottom" orelse args.padding orelse 3,
+
+            .title = args.title orelse std.mem.span(std.os.argv[0]),
 
             .options = res.positionals,
-            .seperator = args.seperator orelse " -> ",
+            .separator = args.separator orelse " ",
         };
     }
 };
@@ -89,19 +103,23 @@ const help =
     \\-t, --title <STR>              The window's title
     \\-b, --background-color <COLOR> The background color in hex
     \\-T, --text-color <COLOR>       The text color in hex
-    \\-B, --border-color <COLOR>     The border color in hex
-    \\    --border-size <INT>        The border size (default: 3)
-    \\-s, --seperator <STR>          The seperator between each key and option
+    \\    --key-color <COLOR>        The text color for the keys in hex (overrides -T for keys)
+    \\    --separator-color <COLOR>  The text color for the separators in hex (overrides -T for separators)
+    \\    --desc-color <COLOR>       The text color for the descriptions in hex (overrides -T for descriptions)
+    \\    --border-color <COLOR>     The border color in hex
+    \\    --border-size <INT>        The border size (default: 2)
+    \\-s, --separator <STR>          The separator between each key and option
     \\    --font-size <INT>          The font size in points to use
+    \\-p, --padding <INT>            The padding size in pixels between the text and the border (default: 3)
+    \\    --padding-left <INT>       The padding on the left side (overrides -p for this side)
+    \\    --padding-right <INT>      The padding on the right side (overrides -p for this side)
+    \\    --padding-top <INT>        The padding on the top (overrides -p for this side)
+    \\    --padding-bottom <INT>     The padding on the bottom (overrides -p for this side)
     \\<OPTION> ...                   The options to enable {{KEY}}={{DESCRIPTION}}
     \\
 ;
 
 const params = clap.parseParamsComptime(help);
-
-fn color_parser(input: []const u8) colors.Str2ColorError!Color {
-    return try colors.str2Color(input);
-}
 
 const OptionParserError = error{
     @"Option Syntax Error",
@@ -111,16 +129,17 @@ const OptionParserError = error{
     @"Option must contain a description",
 };
 
-const option_seperators = "=";
+const option_separators = "=";
 
 fn option_parser(input: []const u8) OptionParserError!Option {
-    const seperator_idx = std.mem.indexOf(u8, input, option_seperators) orelse return error.@"Option Syntax Error";
+    const separator_idx = std.mem.indexOf(u8, input, option_separators) orelse return error.@"Option Syntax Error";
+
     if (!(input.len >= 3)) return error.@"Option Syntax Error";
     if (std.mem.indexOfScalar(u8, input, 0) != null) return error.@"Option Contains Illegal Null Character";
-    if (!std.unicode.utf8ValidateSlice(input[2..])) return error.@"Option Contains Invalid Unicode Character";
+    if (!std.unicode.utf8ValidateSlice(input)) return error.@"Option Contains Invalid Unicode Character";
 
-    const key = input[0..seperator_idx];
-    const desc = input[seperator_idx + 1 ..];
+    const key = input[0..separator_idx];
+    const desc = input[separator_idx + 1 ..];
 
     if (key.len == 0) return error.@"Option must contain a key";
     if (desc.len == 0) return error.@"Option must contain a description";
@@ -131,7 +150,7 @@ fn option_parser(input: []const u8) OptionParserError!Option {
 const parsers = .{
     .STR = clap.parsers.string,
     .INT = clap.parsers.int(u16, 10),
-    .COLOR = color_parser,
+    .COLOR = colors.str2Color,
     .OPTION = option_parser,
 };
 
@@ -139,6 +158,7 @@ const assets = @import("assets");
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
+const all_colors = colors.all_colors;
 
 const std = @import("std");
 const assert = std.debug.assert;

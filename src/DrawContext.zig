@@ -3,45 +3,48 @@ const Vector = struct {
     y: u31,
 };
 
+/// Need to call `close` when done with
+/// The screen in this buffer is the colors on the screen, where each element is one pixel's colors.
 pub const ScreenBuffer = struct {
     fd: std.posix.fd_t,
     screen: []u32,
     height: u31,
     width: u31,
+
+    pub fn deinit(self: *const @This()) void {
+        posix.close(self.fd);
+    }
 };
+
+pub const TextInfo = struct {
+    max_key_width: u32,
+    separator_width: u32,
+    max_desc_width: u32,
+};
+
 pub const DrawContext = @This();
 
 config: *const Config,
+text_info: TextInfo,
+
 freetype_lib: freetype.FT_Library,
 font_face: freetype.FT_Face,
 
 freetype_allocator: freetype.FT_MemoryRec_,
 
 parent_allocator: Allocator,
-alloc_user: AllocUser,
-
-const AllocUser = struct {
-    allocator: Allocator,
-    alloc_list: AllocList,
-
-    const AllocList = ArrayListUnmanaged([]u8);
-
-    pub fn init(allocator: Allocator) Allocator.Error!@This() {
-        return AllocUser{
-            .allocator = allocator,
-            .alloc_list = try AllocUser.AllocList.initCapacity(allocator, 64),
-        };
-    }
-};
+alloc_user: freetype_utils.AllocUser,
 
 pub fn init(parent_allocator: Allocator, output_context: *const OutputContext, config: *const Config) !*DrawContext {
     var ctx = try parent_allocator.create(DrawContext);
+    ctx.* = undefined;
+
     errdefer parent_allocator.destroy(ctx);
     ctx.config = config;
     ctx.parent_allocator = parent_allocator;
 
     const alloc = alloc: {
-        var alloc = switch (options.freetype_allocator) {
+        const alloc = switch (options.freetype_allocator) {
             .c => std.heap.c_allocator,
             .zig => parent_allocator,
         };
@@ -49,12 +52,12 @@ pub fn init(parent_allocator: Allocator, output_context: *const OutputContext, c
         break :alloc alloc;
     };
 
-    ctx.alloc_user = try AllocUser.init(alloc);
+    ctx.alloc_user = try freetype_utils.AllocUser.init(alloc);
     ctx.freetype_allocator = freetype.FT_MemoryRec_{
         .user = &ctx.alloc_user,
-        .alloc = freetype_alloc,
-        .free = freetype_free,
-        .realloc = freetype_realloc,
+        .alloc = freetype_utils.alloc,
+        .free = freetype_utils.free,
+        .realloc = freetype_utils.realloc,
     };
 
     // // standard setup without a custom allocator
@@ -63,7 +66,7 @@ pub fn init(parent_allocator: Allocator, output_context: *const OutputContext, c
 
     {
         const err = freetype.FT_New_Library(&ctx.freetype_allocator, &ctx.freetype_lib);
-        freetypeErrorCheck(err, "Failed to initilize freetype");
+        freetype_utils.errorAssert(err, "Failed to initilize freetype");
     }
     errdefer freetype.FT_Done_Library(&ctx.freetype_lib);
 
@@ -73,11 +76,11 @@ pub fn init(parent_allocator: Allocator, output_context: *const OutputContext, c
 
     log.info("freetype version: {}.{}.{}", .{ freetype.FREETYPE_MAJOR, freetype.FREETYPE_MINOR, freetype.FREETYPE_PATCH });
 
-    // TODO: allow for custom font
+    // TODO: allow for runtime custom font
     {
         const font_data = options.font_data;
         const err = freetype.FT_New_Memory_Face(ctx.freetype_lib, font_data.ptr, font_data.len, 0, &ctx.font_face);
-        freetypeErrorCheck(err, "Failed to initilize font");
+        freetype_utils.errorAssert(err, "Failed to initilize font");
     }
     errdefer freetype.FT_Done_Face(&ctx.font_face);
 
@@ -88,6 +91,11 @@ pub fn init(parent_allocator: Allocator, output_context: *const OutputContext, c
 
     log.info("font family: {s}, style: {s}", .{ font_family, font_style });
 
+    { // set font encoding
+        const err = freetype.FT_Select_Charmap(ctx.font_face, freetype.FT_ENCODING_UNICODE);
+        freetype_utils.errorAssert(err, "Failed to set charmap to unicode");
+    }
+
     { // set font size
         // screen size in milimeters
         const physical_height = output_context.physical_height;
@@ -97,14 +105,14 @@ pub fn init(parent_allocator: Allocator, output_context: *const OutputContext, c
         const height = output_context.height;
         const width = output_context.width;
 
-        const horz_dpi = if (physical_height != null and physical_height.? > 0 and
-            height != null and height.? > 0)
-            @as(u64, @intCast(height.?)) * 64 / (@as(u64, @intCast(physical_height.?)) * 3)
+        // mm to inches, (mm * 5) / 127
+        const horz_dpi = if (physical_height != null and height != null and height.? > 0)
+            (@as(u64, @intCast(height.?)) * 127) / (@as(u64, @intCast(physical_height.?)) * 5)
         else
             0;
 
-        const vert_dpi = if (physical_width != null and width != null)
-            @as(u64, @intCast(width.?)) * 64 / (@as(u64, @intCast(physical_width.?)) * 3)
+        const vert_dpi = if (physical_width != null and width != null and width.? > 0)
+            (@as(u64, @intCast(width.?)) * 127) / (@as(u64, @intCast(physical_width.?)) * 5)
         else
             0;
 
@@ -115,15 +123,23 @@ pub fn init(parent_allocator: Allocator, output_context: *const OutputContext, c
             @intCast(horz_dpi),
             @intCast(vert_dpi),
         );
-        freetypeErrorCheck(err, "Failed to set font size");
+        freetype_utils.errorAssert(err, "Failed to set font size");
     }
+
+    ctx.text_info = try getTextInfo(ctx.font_face, config);
 
     return ctx;
 }
 
 pub fn deinit(self: *DrawContext) void {
-    _ = freetype.FT_Done_Face(self.font_face);
-    _ = freetype.FT_Done_Library(self.freetype_lib);
+    {
+        const err = freetype.FT_Done_Face(self.font_face);
+        freetype_utils.errorPrint("Failed to free FreeType Font: '{s}'", err, .{});
+    }
+    {
+        const err = freetype.FT_Done_Library(self.freetype_lib);
+        freetype_utils.errorPrint("Failed to free FreeType Library: '{s}'", err, .{});
+    }
 
     for (self.alloc_user.alloc_list.items) |allocation| {
         log.warn("FreeType failed to deallocate {} bytes at 0x{x}", .{ allocation.len, @intFromPtr(allocation.ptr) });
@@ -136,40 +152,78 @@ pub fn deinit(self: *DrawContext) void {
     self.parent_allocator.destroy(self);
 }
 
-pub fn freetypeErrorCheck(err: c_int, message: []const u8) void {
-    if (err == 0) return;
+pub fn getTextInfo(font_face: freetype.FT_Face, config: *const Config) !TextInfo {
+    var text_info = TextInfo{
+        .max_key_width = 0,
+        .separator_width = 0,
+        .max_desc_width = 0,
+    };
 
-    const err_desc = freetype.FT_Error_String(err);
+    log.debug("=== Get Text Info", .{});
 
-    if (err_desc == null) panic("{s}. Unknown FreeType Error", .{message});
+    for (config.options) |option| {
+        const sections: [3][]const u8 = .{ option.key, config.separator, option.desc };
+        const info_spaces: [3]*u32 = .{ &text_info.max_key_width, &text_info.separator_width, &text_info.max_desc_width };
+        for (sections, info_spaces) |section, info| {
+            var total_size: u31 = 0;
 
-    panic("{s}. FreeType Error '{s}'", .{ message, err_desc });
+            var utf8_iter = unicode.Utf8Iterator{ .bytes = section, .i = 0 };
+
+            while (utf8_iter.nextCodepointSlice()) |char_slice| {
+                log.debug("Measuring character '{s}'", .{char_slice});
+                const char = unicode.utf8Decode(char_slice) catch char: {
+                    log.warn("\tFailed to utf8 decode char.", .{});
+                    break :char 0;
+                };
+
+                const char_idx = freetype.FT_Get_Char_Index(font_face, char);
+                if (char_idx == 0) log.warn("\tChar is unknown, or not in font.", .{});
+
+                {
+                    const err = freetype.FT_Load_Glyph(font_face, char_idx, freetype.FT_LOAD_DEFAULT);
+
+                    if (freetype_utils.isErr(err)) {
+                        freetype_utils.errorPrint("Failed to load Glyph with : {s}", err, .{});
+
+                        const err2 = freetype.FT_Load_Glyph(font_face, 0, freetype.FT_LOAD_DEFAULT);
+                        freetype_utils.errorAssert(err2, "Failed to load replacement glyph!");
+                    }
+                }
+
+                const glyph_slot = font_face.*.glyph;
+
+                log.debug("\tmetrics x: {}, y: {}", .{ glyph_slot.*.metrics.width, glyph_slot.*.metrics.height });
+
+                total_size += @intCast(glyph_slot.*.metrics.horiAdvance);
+            }
+
+            info.* = @max(info.*, total_size);
+        }
+    }
+
+    log.debug("text info key: {}, sep: {}, desc: {}", text_info);
+
+    return text_info;
 }
 
-pub fn freetypeErrorPrint(comptime message: []const u8, err: c_int, args: anytype) void {
-    if (err == 0) return;
-    const err_desc = freetype.FT_Error_String(err) orelse "Unknown FreeType Error";
-
-    log.err(message, args ++ .{err_desc});
-}
-
+/// caller takes ownership of ScreenBuffer, and must close it when done.
 pub fn createScreenBuffer(self: *const DrawContext) !ScreenBuffer {
-    const height = self.config.height orelse height: {
+    const height = @max(self.config.height orelse 0, height: {
         const font_height: u31 = @intCast(self.font_face.*.height >> 6);
+        const should_round_up = (font_height << 6) < self.font_face.*.height;
+
         const font_lines: u31 = @intCast(self.config.options.len);
 
-        break :height font_height * font_lines * 11 / 10 + (self.config.border_size * 2);
-    };
-    const width = @max(self.config.width orelse 0, width: {
-        const font_advance_width: u31 = @as(u31, @intCast(self.font_face.*.max_advance_width >> 6));
-        var max_line_length: u31 = 0;
-        for (self.config.options) |option| {
-            const line_len: u31 = @intCast(option.key.len + option.desc.len);
-            max_line_length = @intCast(@max(max_line_length, line_len));
-        }
-        max_line_length += @intCast(self.config.seperator.len);
+        break :height (font_height + @intFromBool(should_round_up)) * font_lines + (self.config.border_size * 2) + self.config.padding_top + self.config.padding_bottom;
+    });
 
-        break :width (font_advance_width * max_line_length * 3 / 2) + (self.config.border_size * 2);
+    const width = @max(self.config.width orelse 0, width: {
+        const ti = &self.text_info;
+        const text_width: u31 = @intCast((ti.max_key_width + ti.separator_width + ti.max_desc_width));
+
+        const should_round_up = ((text_width >> 6) << 6) < text_width;
+
+        break :width (text_width >> 6) + @intFromBool(should_round_up) + (self.config.border_size * 2) + self.config.padding_left + self.config.padding_right;
     });
 
     // stride in u8
@@ -187,6 +241,7 @@ pub fn createScreenBuffer(self: *const DrawContext) !ScreenBuffer {
         0,
     );
 
+    // convert it from a u8 array into a u32 array, so each color is one element
     var screen_adjusted: []u32 = undefined;
     screen_adjusted.ptr = @ptrCast(screen.ptr);
     screen_adjusted.len = height * width;
@@ -201,12 +256,12 @@ pub fn createScreenBuffer(self: *const DrawContext) !ScreenBuffer {
 }
 
 pub fn draw_window(self: *const DrawContext, screen: *const ScreenBuffer) !void {
-    log.info("drawing window", .{});
+    log.info("=== Drawing Window", .{});
     const width = screen.width;
     const height = screen.height;
+    const border_size = self.config.border_size;
     const background_color = self.config.background_color;
     const border_color = self.config.border_color;
-    const border_size = self.config.border_size;
 
     // Draw background
     for (0..height) |y| {
@@ -226,189 +281,173 @@ pub fn draw_window(self: *const DrawContext, screen: *const ScreenBuffer) !void 
 
     // Draw text
 
-    var origin = Vector{ .x = 10, .y = @as(u31, @intCast(self.font_face.*.ascender >> 6)) + self.config.border_size };
+    const separator_width = self.text_info.separator_width;
+    const key_width = self.text_info.max_key_width;
+    const desc_width = self.text_info.max_desc_width;
+
+    // border_size << 7 because * 64 for 26.6 frac pixels, then * 2 bc one on each side
+    assert(key_width + separator_width + desc_width + (border_size << 7) <= width << 6);
+
+    const separator_x = (@as(u31, border_size) << 6) + key_width + (self.config.padding_left << 6);
+
+    var pen_y = (@as(u31, border_size) << 6) + @as(u31, @intCast(self.font_face.*.ascender)) + (self.config.padding_top << 6);
 
     for (self.config.options) |option| {
-        const lines: [3][]const u8 = .{ option.key, self.config.seperator, option.desc };
-        for (lines) |line| {
-            for (line) |char| {
-                log.info("loading char '{c}'", .{char});
+        assert(pen_y < height << 6);
+
+        defer pen_y += @intCast(self.font_face.*.max_advance_height);
+
+        var pen_x: u31 = @intCast(separator_x);
+
+        // draw key
+        {
+            // TODO: Make this support unicode
+            var reverse_iter = mem.reverseIterator(option.key);
+            while (reverse_iter.next()) |char| {
+                log.debug("loading char '{c}'", .{char});
+                log.debug("\tChar code : 0x{x}", .{char});
                 {
                     const err = freetype.FT_Load_Char(self.font_face, char, freetype.FT_LOAD_RENDER);
-                    freetypeErrorCheck(err, "Failed to load char '" ++ .{char} ++ "'");
+                    freetype_utils.errorAssert(err, "Failed to load char '" ++ .{char} ++ "'");
                 }
 
                 const glyph_slot = self.font_face.*.glyph;
 
+                assert(glyph_slot.*.bitmap_left >= 0);
+                assert(glyph_slot.*.bitmap_top >= 0);
+
                 const bitmap_left: u31 = @intCast(glyph_slot.*.bitmap_left);
                 const bitmap_top: u31 = @intCast(glyph_slot.*.bitmap_top);
 
+                const adv_x: u31 = @intCast(glyph_slot.*.advance.x);
+
+                assert(pen_x > adv_x);
+                pen_x -= adv_x;
+
+                //assert(origin.x + bitmap_left < width);
+                assert(pen_y - bitmap_top + glyph_slot.*.bitmap.rows < (height << 6));
                 const glyph_origin = Vector{
-                    .x = origin.x + bitmap_left,
-                    .y = origin.y - bitmap_top,
+                    .x = (pen_x >> 6) + bitmap_left, // add bitmap_left, because my origin is top left of bm, theirs is draw line
+                    .y = (pen_y >> 6) - bitmap_top,
                 };
 
-                draw_bitmap(self, screen, glyph_slot.*.bitmap, glyph_origin);
+                draw_bitmap(self, screen, glyph_slot.*.bitmap, glyph_origin, self.config.key_color);
+            }
+        }
 
-                origin.x += @intCast(glyph_slot.*.advance.x >> 6);
-                origin.y += @intCast(glyph_slot.*.advance.y >> 6);
+        // draw separator
+        pen_x = @intCast(separator_x);
+
+        const sections: [2][]const u8 = .{ self.config.separator, option.desc };
+        const color_list: [2]Color = .{ self.config.separator_color, self.config.desc_color };
+
+        for (sections, color_list) |section, color| {
+            var utf8_iter = unicode.Utf8Iterator{ .bytes = section, .i = 0 };
+            while (utf8_iter.nextCodepointSlice()) |char_slice| {
+                log.debug("loading char '{s}'", .{char_slice});
+
+                assert(pen_x < width << 6);
+
+                const utf8_char = if (char_slice.len == 1) char_slice[0] else utf8_char: {
+                    break :utf8_char unicode.utf8Decode(char_slice) catch |err| {
+                        log.warn("\tFailed to decode character as UTF8 with: {s}", .{@errorName(err)});
+
+                        break :utf8_char 0;
+                    };
+                };
+
+                // direct copy bytes into cint
+                //const utf8_char: u32 = utf8_char: {
+                //    var utf8_char: u32 = 0;
+                //    const utf8_char_bytes = mem.asBytes(&utf8_char);
+
+                //    @memcpy(utf8_char_bytes[4 - char_slice.len ..], char_slice);
+
+                //    mem.reverse(u8, utf8_char_bytes);
+
+                //    break :utf8_char utf8_char;
+                //};
+                log.debug("\tChar code : 0x{x}", .{utf8_char});
+
+                {
+                    const err = freetype.FT_Load_Char(self.font_face, utf8_char, freetype.FT_LOAD_RENDER);
+                    freetype_utils.errorAssert(err, "Failed to load char");
+                }
+
+                //log.debug("\tchar_idx: 0x{x}", .{char_idx});
+
+                //{
+                //    const err = freetype.FT_Render_Glyph(self.font_face.*.glyph, freetype.FT_RENDER_MODE_NORMAL);
+
+                //    freetype_utils.errorAssert(err, "Failed to render glyph!");
+                //}
+
+                const glyph_slot = self.font_face.*.glyph;
+
+                assert(glyph_slot.*.bitmap_left >= 0);
+                assert(glyph_slot.*.bitmap_top >= 0);
+
+                const bitmap_left: u31 = @intCast(glyph_slot.*.bitmap_left);
+                const bitmap_top: u31 = @intCast(glyph_slot.*.bitmap_top);
+
+                //assert(origin.x + bitmap_left < width);
+                assert(pen_y - bitmap_top + glyph_slot.*.bitmap.rows < (height << 6));
+                const glyph_origin = Vector{
+                    .x = (pen_x >> 6) + bitmap_left, // add bitmap_left, because the origin is not the start of the glyph, but the main start line
+                    .y = (pen_y >> 6) - bitmap_top,
+                };
+
+                draw_bitmap(self, screen, glyph_slot.*.bitmap, glyph_origin, color);
+
+                pen_x += @intCast(glyph_slot.*.advance.x);
             }
         }
     }
 }
 
-pub fn draw_bitmap(ctx: *const DrawContext, screen: *const ScreenBuffer, bitmap: freetype.FT_Bitmap, origin: Vector) void {
+pub fn draw_bitmap(ctx: *const DrawContext, screen: *const ScreenBuffer, bitmap: freetype.FT_Bitmap, origin: Vector, color: Color) void {
     const screen_width = screen.width;
     const screen_height = screen.height;
-    const screen_stride = screen_width;
 
     const bitmap_width = bitmap.width;
     const bitmap_height = bitmap.rows;
 
     log.debug("\tbitmap width: {}, height: {}", .{ bitmap_width, bitmap_height });
 
+    // zero size char (whitespace likely)
     if (bitmap_width == 0 or bitmap_height == 0) return;
 
     log.debug("\torigin x: {}, y: {}", origin);
-    log.debug("\tbitmap height: {}, width: {}", .{ bitmap_height, bitmap_width });
-    assert(bitmap_width + origin.x <= screen_width);
-    assert(bitmap_height + origin.y <= screen_height);
+    assert(bitmap_width + origin.x < screen_width);
+    assert(bitmap_height + origin.y < screen_height);
 
-    if (bitmap.buffer) |bitmap_buffer| {
-        for (0..bitmap_height) |y| {
-            const screen_row_forwards = screen.screen[(origin.y + y) * screen_stride ..];
-            const screen_row = screen_row_forwards[origin.x..][0..bitmap_width];
-
-            screen_row[0] = @bitCast(ctx.config.text_color);
-
-            const bitmap_row = bitmap_buffer[y * bitmap_width ..][0..bitmap_width];
-
-            for (bitmap_row, 0..) |alpha, idx| {
-                var text_color = ctx.config.text_color;
-                text_color.a = alpha;
-                const color = colors.composite(ctx.config.background_color, text_color);
-
-                screen_row[idx] = @bitCast(color);
-            }
-        }
-    } else {
-        log.warn("Character has a non-zero size and no bitmap buffer!", .{});
+    if (bitmap.buffer == null) {
+        log.warn("\tCharacter has a non-zero size and no bitmap buffer!", .{});
+        return;
     }
-}
 
-const FT_Memory = freetype.FT_Memory;
+    const bitmap_buffer = bitmap.buffer.?;
 
-fn freetype_alloc(memory: FT_Memory, _size: c_long) callconv(.C) ?*anyopaque {
-    assert(_size > 0);
-    assert(memory != null);
-    assert(memory.*.user != null);
+    for (0..bitmap_height) |y| {
+        const screen_row_forwards = screen.screen[(origin.y + y) * screen_width ..];
+        const screen_row = screen_row_forwards[origin.x..][0..bitmap_width];
 
-    const size: usize = @intCast(_size);
+        //screen_row[0] = @bitCast(ctx.config.text_color);
 
-    const user = @as(*AllocUser, @alignCast(@ptrCast(memory.*.user)));
+        const bitmap_row = bitmap_buffer[y * bitmap_width ..][0..bitmap_width];
 
-    const new = user.allocator.alloc(u8, size) catch @panic("OOM");
+        for (bitmap_row, 0..) |alpha, idx| {
+            var text_color = color;
+            text_color.a = alpha;
+            const draw_color = colors.composite(ctx.config.background_color, text_color);
 
-    user.alloc_list.append(user.allocator, new) catch @panic("OOM");
-
-    return new.ptr;
-}
-
-fn freetype_free(memory: FT_Memory, ptr: ?*anyopaque) callconv(.C) void {
-    assert(ptr != null);
-    assert(memory != null);
-    assert(memory.*.user != null);
-
-    const user = @as(*AllocUser, @alignCast(@ptrCast(memory.*.user)));
-
-    const allocation, const idx = allocation: {
-        for (user.alloc_list.items, 0..) |allocation, idx| {
-            if (ptr == @as(?*anyopaque, allocation.ptr)) break :allocation .{ allocation, idx };
+            screen_row[idx] = @bitCast(draw_color);
         }
-        @panic("FreeType freed an unowned pointer");
-    };
-
-    user.allocator.free(allocation);
-
-    _ = user.alloc_list.swapRemove(idx);
-}
-
-fn freetype_realloc(memory: FT_Memory, _cur_size: c_long, _new_size: c_long, ptr: ?*anyopaque) callconv(.C) ?*anyopaque {
-    //log.debug("freetype realloc ptr: {*}, len before: {}, after: {}", .{ ptr, _cur_size, _new_size });
-
-    assert(ptr != null);
-    assert(_cur_size > 0);
-    assert(_new_size > 0);
-    assert(memory != null);
-    assert(memory.*.user != null);
-
-    const cur_size: usize = @intCast(_cur_size);
-    const new_size: usize = @intCast(_new_size);
-
-    if (cur_size == new_size) return ptr;
-
-    const user = @as(*AllocUser, @alignCast(@ptrCast(memory.*.user)));
-
-    const allocation, const idx = allocation: {
-        for (user.alloc_list.items, 0..) |allocation, idx| {
-            if (ptr == @as(?*anyopaque, allocation.ptr)) break :allocation .{ allocation, idx };
-        }
-        @panic("FreeType resized an unowned pointer");
-    };
-
-    assert(cur_size == allocation.len);
-
-    const new = user.allocator.realloc(allocation, new_size) catch @panic("OOM");
-
-    user.alloc_list.items[idx] = new;
-
-    return @ptrCast(new.ptr);
-}
-
-test "freetype allocator" {
-    const expect = std.testing.expect;
-    const allocator = std.testing.allocator;
-
-    var alloc_user = AllocUser{
-        .allocator = allocator,
-        .alloc_list = try ArrayListUnmanaged([]u8).initCapacity(allocator, 50),
-    };
-    defer alloc_user.alloc_list.deinit(allocator);
-
-    var freetype_allocator = freetype.FT_MemoryRec_{
-        .user = &alloc_user,
-        .alloc = freetype_alloc,
-        .free = freetype_free,
-        .realloc = freetype_realloc,
-    };
-
-    var freetype_lib: freetype.FT_Library = undefined;
-
-    var err = freetype.FT_New_Library(&freetype_allocator, &freetype_lib);
-    try expect(err == 0);
-    defer _ = freetype.FT_Done_Library(freetype_lib);
-
-    freetype.FT_Add_Default_Modules(freetype_lib);
-
-    log.info("freetype version: {}.{}.{}", .{ freetype.FREETYPE_MAJOR, freetype.FREETYPE_MINOR, freetype.FREETYPE_PATCH });
-
-    var font_face: freetype.FT_Face = undefined;
-
-    err = freetype.FT_New_Memory_Face(freetype_lib, options.font_data.ptr, options.font_data.len, 0, &font_face);
-    try expect(err == 0);
-    defer _ = freetype.FT_Done_Face(font_face);
-
-    err = freetype.FT_Set_Pixel_Sizes(font_face, 15, 0);
-    try expect(err == 0);
-
-    for ("testing -> test\n") |char| {
-        err = freetype.FT_Load_Char(font_face, char, freetype.FT_LOAD_RENDER);
-        try expect(err == 0);
     }
 }
 
 test "init" {
-    const context = try init(std.testing.allocator, &.{}, &Config{
+    const config = Config{
         .arena = undefined,
 
         .program_name = "test",
@@ -419,28 +458,47 @@ test "init" {
 
         .title = "test",
 
-        .background_color = colors.main,
-        .text_color = colors.text,
+        .background_color = all_colors.main,
+        .key_color = all_colors.text,
+        .separator_color = all_colors.text,
+        .desc_color = all_colors.text,
+
+        .padding_top = 0,
+        .padding_left = 0,
+        .padding_right = 0,
+        .padding_bottom = 0,
 
         .border_size = 3,
-        .border_color = colors.iris,
+        .border_color = all_colors.iris,
 
         .options = &[1]config_mod.Option{.{ .key = "a", .desc = "b" }},
-        .seperator = " ",
-    });
+        .separator = " ",
+    };
+
+    const context = try init(std.testing.allocator, &.{}, &config);
     defer context.deinit();
 
+    assert(context.text_info.max_key_width > 0);
+    assert(context.text_info.separator_width > 0);
+    assert(context.text_info.max_desc_width > 0);
+
     const screen_buffer = try context.createScreenBuffer();
+    defer screen_buffer.deinit();
 
     try context.draw_window(&screen_buffer);
 }
+
+const freetype_utils = @import("freetype.zig");
 
 const options = @import("options");
 
 const config_mod = @import("config.zig");
 const Config = config_mod.Config;
+
 const colors = @import("colors.zig");
+const all_colors = colors.all_colors;
 const Color = colors.Color;
+
 const OutputContext = @import("main.zig").OutputContext;
 
 const freetype = @cImport({
@@ -460,3 +518,4 @@ const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const assert = std.debug.assert;
 const panic = std.debug.panic;
 const log = std.log.scoped(.DrawContext);
+const unicode = std.unicode;
