@@ -18,7 +18,7 @@
         formatter = alejandra;
         devShells.default = mkShell {
           nativeBuildInputs = [zig];
-          buildInputs = [wayland];
+          buildInputs = [wayland wayland-scanner];
         };
 
         packages.default = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {

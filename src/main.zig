@@ -60,7 +60,7 @@ pub fn main() anyerror!void {
     const surface = try compositor.createSurface();
     defer surface.destroy();
 
-    const layer_surface = try layer_shell.getLayerSurface(surface, null, zwlr.LayerShellV1.Layer.top, "elijah-immer/zig-prompt");
+    const layer_surface = try layer_shell.getLayerSurface(surface, null, zwlr.LayerShellV1.Layer.overlay, "elijah-immer/zig-prompt");
     defer layer_surface.destroy();
 
     layer_surface.setSize(config.width.?, config.height.?);
