@@ -1,3 +1,5 @@
+Moved to codeberg https://codeberg.org/Elijah-Immer/zig-prompt
+
 # Zig Prompt
 A simple wayland prompting utility
 
